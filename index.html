@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>座位查詢｜婚禮</title>
+<style>
+  :root { --gold: #c8962e; --ink: #222; --line: #e6d9bf; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 560px; padding: 24px 16px 48px; background: #fff; color: var(--ink);
+         font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; text-align: center; }
+  .en { margin: 0; color: var(--gold); letter-spacing: .35em; font-size: 14px; }
+  h1 { margin: 6px 0 4px; font-size: 30px; letter-spacing: .3em; font-weight: 600; }
+  .sub { margin: 0 0 20px; color: var(--gold); font-size: 14px; letter-spacing: .1em; }
+  form { display: flex; gap: 8px; }
+  input, button { font: inherit; font-size: 18px; padding: 12px 14px; border: 1px solid var(--gold); border-radius: 8px; }
+  input { flex: 1; min-width: 0; }
+  button { background: var(--gold); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; }
+  #list button { display: block; width: 100%; margin-top: 8px; background: #fff; color: var(--ink); text-align: left; }
+  #msg { min-height: 1.5em; margin: 12px 0 0; }
+  #result { margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+  #who { margin: 0; font-size: 20px; }
+  #who b { color: var(--gold); font-size: 26px; }
+  #mates { margin: 8px 0 0; font-size: 15px; color: #555; }
+  svg { width: 100%; height: auto; margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; }
+  svg text { font-family: inherit; text-anchor: middle; dominant-baseline: central; fill: var(--gold); }
+  .fix { fill: #fff; stroke: var(--gold); }
+  .dash { stroke-dasharray: 4 3; }
+  .t circle { fill: #fff; stroke: var(--gold); stroke-width: 1.5; }
+  .t text { fill: var(--ink); font-size: 22px; }
+  .t.on circle { fill: var(--gold); stroke: #8a6414; stroke-width: 5; }
+  .t.on text { fill: #fff; font-weight: 700; }
+  @media (prefers-reduced-motion: no-preference) {
+    .t.on circle { animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { stroke-width: 12; stroke-opacity: .35; } }
+  }
+  .note { font-size: 14px; color: #777; }
+</style>
+</head>
+<body>
+<header>
+  <p class="en">FIND YOUR SEAT</p>
+  <h1>座位查詢</h1>
+  <p class="sub">2026.12.05　晶麒莊園 愛儷廳</p>
+</header>
+
+<form id="f">
+  <input id="q" type="search" placeholder="請輸入您的姓名" aria-label="姓名" autocomplete="off" required>
+  <button id="go" disabled>查詢</button>
+</form>
+<p id="msg" role="status" aria-live="polite">名單載入中…</p>
+<div id="list"></div>
+<section id="result" hidden>
+  <p id="who"></p>
+  <p id="mates"></p>
+</section>
+
+<svg id="map" viewBox="40 40 590 840" role="img" aria-label="愛儷廳桌位平面圖">
+  <rect class="fix" x="150" y="57" width="352" height="103"/><text x="326" y="108" font-size="30">舞台</text>
+  <rect class="fix" x="60" y="58" width="66" height="41"/><text x="93" y="78" font-size="15">音控</text>
+  <rect class="fix" x="302" y="336" width="54" height="489"/><text x="329" y="580" font-size="15">走道</text>
+  <rect class="fix dash" x="392" y="690" width="82" height="34"/><text x="433" y="707" font-size="14">收禮桌</text>
+  <rect class="fix dash" x="477" y="690" width="82" height="34"/><text x="518" y="707" font-size="14">收禮桌</text>
+  <rect class="fix dash" x="574" y="726" width="38" height="89"/><text x="593" y="770" font-size="14">入口</text>
+  <rect class="fix dash" x="391" y="825" width="172" height="34"/><text x="477" y="842" font-size="14">背板</text>
+  <rect class="fix dash" x="191" y="825" width="82" height="34"/><text x="232" y="842" font-size="14">雞尾酒</text>
+</svg>
+<p class="note">找不到名字或座位，請洽現場招待人員。</p>
+
+<script>
+// 名單來源：CSV，A 欄桌名（「主桌」或 1–15）、B 欄姓名、C 欄可選填桌號（A 欄是自訂桌名時用）。
+// 換成 Google 試算表「發布到網路」的 CSV 網址即可，改名單不需重新部署。
+const CSV_URL = 'sample.csv';
+
+// 桌位中心座標，量自場地提供的「愛儷宴會廳16桌」平面圖。
+const TABLES = {
+  '主桌': [328, 245, 55],
+  1: [119, 356], 3: [119, 460], 5: [119, 563], 7: [119, 666], 9: [119, 770],
+  2: [226, 414], 4: [226, 518], 6: [226, 621], 8: [226, 725],
+  11: [414, 428], 13: [414, 532], 15: [414, 636],
+  10: [526, 359], 12: [526, 463], 14: [526, 566],
+};
+
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+for (const [k, [x, y, r = 44]] of Object.entries(TABLES)) {
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 't');
+  g.dataset.k = k;
+  const c = document.createElementNS(NS, 'circle');
+  c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', r);
+  const t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', x); t.setAttribute('y', y);
+  t.textContent = k;
+  g.append(c, t);
+  $('map').append(g);
+}
+
+function parseCSV(text) {
+  const rows = []; let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') cell += c;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (c !== '\r') cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+console.assert(JSON.stringify(parseCSV('"a,1","b ""x"""\r\nc,d\n')) === '[["a,1","b \\"x\\""],["c","d"]]', 'parseCSV');
+
+function tableKey(s) {
+  s = String(s || '').trim();
+  if (TABLES[s]) return s;
+  const m = s.match(/^第?\s*(\d+)\s*桌?$/);
+  return m && TABLES[+m[1]] ? String(+m[1]) : null;
+}
+console.assert(tableKey('主桌') === '主桌' && tableKey(' 第3桌') === '3' && tableKey('07') === '7' && tableKey('Pricer1') === null, 'tableKey');
+
+const norm = s => s.replace(/\s+/g, '').toLowerCase();
+let guests = [];
+
+fetch(CSV_URL, { cache: 'no-store' })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  .then(text => {
+    if (text.trimStart().startsWith('<')) throw new Error('not csv'); // 試算表未公開時會拿到登入頁
+    guests = parseCSV(text)
+      .map(r => ({ table: (r[0] || '').trim(), name: (r[1] || '').trim(), key: tableKey(r[2]) || tableKey(r[0]) }))
+      .filter(g => g.name && g.name !== '姓名');
+    $('msg').textContent = '';
+    $('go').disabled = false;
+  })
+  .catch(() => { $('msg').textContent = '名單載入失敗，請重新整理，或洽現場招待人員。'; });
+
+function show(g) {
+  $('list').replaceChildren();
+  $('msg').textContent = '';
+  document.querySelectorAll('.t.on').forEach(e => e.classList.remove('on'));
+  const num = /^\d+$/.test(g.key || '') ? `第 ${g.key} 桌` : '';
+  const label = !num ? g.table : tableKey(g.table) ? num : `${g.table}（${num}）`;
+  const b = document.createElement('b');
+  b.textContent = label;
+  $('who').replaceChildren(`${g.name}，您的座位在 `, b);
+  const mates = guests.filter(o => o !== g && o.table === g.table).map(o => o.name);
+  $('mates').textContent = (mates.length ? `同桌賓客：${mates.join('、')}` : '') +
+    (g.key ? '' : '　圖上未標示此桌，請洽現場招待人員。');
+  $('result').hidden = false;
+  if (g.key) {
+    const el = document.querySelector(`.t[data-k="${g.key}"]`);
+    el.classList.add('on');
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = norm($('q').value);
+  if (!q) return;
+  $('result').hidden = true;
+  const hits = guests.filter(g => norm(g.name).includes(q));
+  if (!hits.length) {
+    $('list').replaceChildren();
+    $('msg').textContent = '找不到這個名字，請確認輸入的是喜帖上的姓名，或洽現場招待人員。';
+  } else if (hits.length === 1) {
+    show(hits[0]);
+  } else {
+    $('msg').textContent = `找到 ${hits.length} 位，請點選您的名字：`;
+    $('list').replaceChildren(...hits.slice(0, 30).map(g => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = `${g.name}（${g.table}）`;
+      btn.onclick = () => show(g);
+      return btn;
+    }));
+  }
+});
+</script>
+</body>
+</html>
