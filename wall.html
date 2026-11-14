@@ -48,7 +48,7 @@ let lastT = 0;
 try { lastT = Number(localStorage.getItem('wallLastT')) || 0; } catch {}
 let queue = [], speed = 120, size = 40, videoId = null, usingLocal = false, started = false;
 // 閒置提示：跑馬燈空了一段時間就播一次教賓客怎麼留言的提示；秒數與文字可在後台改，0 秒為關閉。
-const HINT = '📱 打開 LINE 官方帳號選單的「照片上傳」，就能把祝福送上大螢幕！';
+const HINT = '📱 打開 LINE 官方帳號選單的「祝福留言」，就能把祝福送上大螢幕！';
 let hint = HINT, idleMs = 60000, lastShownAt = Date.now();
 
 // 從分享連結、網址或單純的 ID 取出雲端硬碟檔案 ID。
