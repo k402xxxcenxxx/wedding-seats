@@ -93,7 +93,7 @@ const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const thumb = (id, w) => `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`;
-const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', size: '超過檔案大小上限', type: '只接受照片或影片' };
+const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', quota: '已達每人可上傳的數量上限', size: '超過檔案大小上限', type: '只接受照片或影片' };
 
 // 每個裝置一組隨機 ID，同名的人靠 ID 前四碼區分；清除瀏覽器資料後會重新產生。
 let me = null, settings = {}, photos = [];
@@ -163,7 +163,7 @@ function draw() {
     shot.onclick = () => view(p);
     const cap = document.createElement('figcaption');
     const who = document.createElement('span');
-    who.textContent = p.name || '賓客';
+    who.textContent = (p.wait ? '審核中・' : '') + (p.name || '賓客');
     cap.append(who, likeBtn(p));
     fig.append(shot, cap);
     return fig;
@@ -175,7 +175,7 @@ function view(p) {
   if (p.v) { el.src = `https://drive.google.com/file/d/${p.id}/preview`; el.title = '影片'; el.allow = 'autoplay; fullscreen'; }
   else { el.src = thumb(p.id, 1600); el.alt = ''; }
   $('media').replaceChildren(el);
-  $('cap').textContent = `${p.name || '賓客'}${p.tag ? ' #' + p.tag : ''}${p.msg ? '：' + p.msg : ''}`;
+  $('cap').textContent = `${p.wait ? '（審核中，目前只有您看得到）' : ''}${p.name || '賓客'}${p.tag ? ' #' + p.tag : ''}${p.msg ? '：' + p.msg : ''}`;
   $('viewLike').replaceChildren(likeBtn(p));
   $('view').showModal();
 }

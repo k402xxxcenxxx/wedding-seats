@@ -50,7 +50,7 @@
   <input id="q" type="search" placeholder="請輸入您的姓名" aria-label="姓名" autocomplete="off" required>
   <button id="go" disabled>查詢</button>
 </form>
-<p id="msg" role="status" aria-live="polite">名單載入中…</p>
+<p id="msg" role="status" aria-live="polite"></p>
 <div id="list"></div>
 <section id="result" hidden>
   <p id="who"></p>
@@ -70,9 +70,10 @@
 <p class="note">找不到名字或座位，請洽現場招待人員。</p>
 
 <script>
-// 名單來源：CSV，A 欄桌名（「主桌」或 1–15）、B 欄姓名、C 欄可選填桌號（A 欄是自訂桌名時用）。
-// 這是 Google 試算表「發布到網路」的 CSV 網址，改名單不需重新部署（更新約有數分鐘延遲）。
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQu5CH9F9PVTSmkk3MPL6hP2X7opHGfTH7PVbSfpE5QcqscvmQloXPQBpRFd9lvCcD5wLl1scPgBWMY/pub?gid=0&single=true&output=csv';
+// 名單不放在網頁上：查詢時把姓名送到後端（Google Apps Script），只回傳符合的幾筆。
+// 通關金鑰在網址的 # 後面，由 LINE 選單的連結帶進來。
+const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
+const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
 
 // 桌位中心座標，量自場地提供的「愛儷宴會廳16桌」平面圖。
 const TABLES = {
@@ -98,24 +99,6 @@ for (const [k, [x, y, r = 44]] of Object.entries(TABLES)) {
   $('map').append(g);
 }
 
-function parseCSV(text) {
-  const rows = []; let row = [], cell = '', quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c !== '"') cell += c;
-      else if (text[i + 1] === '"') { cell += '"'; i++; }
-      else quoted = false;
-    } else if (c === '"') quoted = true;
-    else if (c === ',') { row.push(cell); cell = ''; }
-    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
-    else if (c !== '\r') cell += c;
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
-  return rows;
-}
-console.assert(JSON.stringify(parseCSV('"a,1","b ""x"""\r\nc,d\n')) === '[["a,1","b \\"x\\""],["c","d"]]', 'parseCSV');
-
 function tableKey(s) {
   s = String(s || '').trim();
   if (TABLES[s]) return s;
@@ -124,20 +107,8 @@ function tableKey(s) {
 }
 console.assert(tableKey('主桌') === '主桌' && tableKey(' 第3桌') === '3' && tableKey('07') === '7' && tableKey('Pricer1') === null, 'tableKey');
 
-const norm = s => s.replace(/\s+/g, '').toLowerCase();
-let guests = [];
-
-fetch(CSV_URL, { cache: 'no-store' })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-  .then(text => {
-    if (text.trimStart().startsWith('<')) throw new Error('not csv'); // 試算表未公開時會拿到登入頁
-    guests = parseCSV(text)
-      .map(r => ({ table: (r[0] || '').trim(), name: (r[1] || '').trim(), key: tableKey(r[2]) || tableKey(r[0]) }))
-      .filter(g => g.name && g.name !== '姓名');
-    $('msg').textContent = '';
-    $('go').disabled = false;
-  })
-  .catch(() => { $('msg').textContent = '名單載入失敗，請重新整理，或洽現場招待人員。'; });
+$('msg').textContent = KEY ? '' : '連結無效，請從 LINE 選單重新開啟。';
+$('go').disabled = !KEY;
 
 function show(g) {
   $('list').replaceChildren();
@@ -148,8 +119,7 @@ function show(g) {
   const b = document.createElement('b');
   b.textContent = label;
   $('who').replaceChildren(`${g.name}，您的座位在 `, b);
-  const mates = guests.filter(o => o !== g && o.table === g.table).map(o => o.name);
-  $('mates').textContent = (mates.length ? `同桌賓客：${mates.join('、')}` : '') +
+  $('mates').textContent = (g.mates.length ? `同桌賓客：${g.mates.join('、')}` : '') +
     (g.key ? '' : '　圖上未標示此桌，請洽現場招待人員。');
   $('result').hidden = false;
   if (g.key) {
@@ -159,20 +129,36 @@ function show(g) {
   }
 }
 
-$('f').addEventListener('submit', e => {
+$('f').addEventListener('submit', async e => {
   e.preventDefault();
-  const q = norm($('q').value);
+  const q = $('q').value.trim();
   if (!q) return;
   $('result').hidden = true;
-  const hits = guests.filter(g => norm(g.name).includes(q));
+  $('list').replaceChildren();
+  document.querySelectorAll('.t.on').forEach(el => el.classList.remove('on'));
+  $('msg').textContent = '查詢中…';
+  $('go').disabled = true;
+  let d;
+  try {
+    // 不設 Content-Type：維持 text/plain 才不會觸發 CORS preflight（Apps Script 不回應 OPTIONS）。
+    d = await (await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'seat', k: KEY, q }) })).json();
+  } catch {
+    d = { error: 'net' };
+  }
+  $('go').disabled = false;
+  if (!d.ok) {
+    $('msg').textContent = { short: '請至少輸入兩個字。', key: '連結無效，請從 LINE 選單重新開啟。' }[d.error]
+      || '查詢失敗，請再試一次，或洽現場招待人員。';
+    return;
+  }
+  const hits = d.hits.map(h => ({ ...h, key: tableKey(h.no) || tableKey(h.table) }));
   if (!hits.length) {
-    $('list').replaceChildren();
     $('msg').textContent = '找不到這個名字，請確認輸入的是喜帖上的姓名，或洽現場招待人員。';
   } else if (hits.length === 1) {
     show(hits[0]);
   } else {
     $('msg').textContent = `找到 ${hits.length} 位，請點選您的名字：`;
-    $('list').replaceChildren(...hits.slice(0, 30).map(g => {
+    $('list').replaceChildren(...hits.map(g => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = `${g.name}（${g.table}）`;
