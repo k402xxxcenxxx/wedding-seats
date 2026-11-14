@@ -27,6 +27,12 @@
   .pick.busy { opacity: .5; }
   #msg { min-height: 1.5em; margin: 14px 0 6px; font-size: 17px; }
   progress { width: 100%; accent-color: var(--gold); }
+  .spin { display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -2px; border: 3px solid var(--line);
+          border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
+  .spin[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* 減少動態效果時轉慢而不是停掉：它是「還在傳」的唯一即時訊號。 */
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
   #fail { color: #b00020; font-size: 15px; white-space: pre-line; }
   .note { font-size: 14px; color: #777; }
   #grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -68,7 +74,7 @@
   <label class="pick" id="pick">選擇照片或影片
     <input id="files" type="file" accept="image/*,video/*" multiple>
   </label>
-  <p id="msg" role="status" aria-live="polite"></p>
+  <p id="msg"><span class="spin" id="spin" aria-hidden="true" hidden></span><span id="msgText" role="status" aria-live="polite"></span></p>
   <progress id="bar" max="1" value="0" hidden></progress>
   <p id="fail"></p>
   <p class="note" id="rule"></p>
@@ -103,7 +109,7 @@ function setMe(name) {
   const id = me?.id || Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   me = { id, name };
   try { localStorage.setItem('guest', JSON.stringify(me)); } catch {}   // 無痕模式存不了就只用這一次
-  $('me').textContent = `${name} #${id.slice(0, 4)}`;
+  $('me').textContent = name;
   $('nameForm').hidden = true;
   $('app').hidden = false;
 }
@@ -175,7 +181,7 @@ function view(p) {
   if (p.v) { el.src = `https://drive.google.com/file/d/${p.id}/preview`; el.title = '影片'; el.allow = 'autoplay; fullscreen'; }
   else { el.src = thumb(p.id, 1600); el.alt = ''; }
   $('media').replaceChildren(el);
-  $('cap').textContent = `${p.wait ? '（審核中，目前只有您看得到）' : ''}${p.name || '賓客'}${p.tag ? ' #' + p.tag : ''}${p.msg ? '：' + p.msg : ''}`;
+  $('cap').textContent = `${p.wait ? '（審核中，目前只有您看得到）' : ''}${p.name || '賓客'}${p.msg ? '：' + p.msg : ''}`;
   $('viewLike').replaceChildren(likeBtn(p));
   $('view').showModal();
 }
@@ -220,19 +226,22 @@ $('files').addEventListener('change', async e => {
   $('pick').classList.add('busy');
   $('fail').textContent = '';
   $('bar').hidden = false;
+  $('bar').removeAttribute('value');   // 還沒有進度時顯示來回跑的動畫
+  $('spin').hidden = false;
   const msg = $('wish').value.trim();
   const all = files.reduce((n, f) => n + f.size, 0);
-  let sent = 0, done = 0; const failed = [];
+  let sent = 0, done = 0, rate = '計算速率中…'; const failed = [];
   for (const [i, f] of files.entries()) {
-    const label = `上傳中 ${i + 1} / ${files.length}`;
-    $('msg').textContent = `${label}…請不要關閉此頁`;
+    const say = n => { $('msgText').textContent = `上傳中 ${i + 1} / ${files.length}　${Math.round((sent + n) / all * 100)}%　${rate}`; };
+    say(0);
     try {
       if (!/^(image|video)\//.test(f.type)) throw new Error(ERR.type);
       if (f.type.startsWith('video/') && await seconds(f) > settings.maxVideoSeconds)
         throw new Error(`影片超過 ${settings.maxVideoSeconds} 秒`);
       await upload(f, msg, (n, speed) => {
         $('bar').value = (sent + n) / all;
-        $('msg').textContent = `${label}　${Math.round((sent + n) / all * 100)}%　${(speed / 1048576).toFixed(1)} MB/s`;
+        rate = `${(speed / 1048576).toFixed(1)} MB/s`;
+        say(n);
       });
       done++;
     } catch (err) {
@@ -241,7 +250,8 @@ $('files').addEventListener('change', async e => {
     sent += f.size;
     $('bar').value = sent / all;
   }
-  $('msg').textContent = done ? `已上傳 ${done} 個檔案，謝謝您的分享！` : '沒有檔案上傳成功。';
+  $('spin').hidden = true;
+  $('msgText').textContent = done ? `已上傳 ${done} 個檔案，謝謝您的分享！` : '沒有檔案上傳成功。';
   $('fail').textContent = failed.join('\n');
   $('bar').hidden = true;
   if (done) $('wish').value = '';
