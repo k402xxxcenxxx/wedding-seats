@@ -29,12 +29,14 @@ function setup() {
     photos.appendRow([f.getDateCreated(), f.getId(), f.getMimeType().split('/')[0], '', '', '', '', '']);
   }
   ss.insertSheet('愛心').appendRow(['檔案ID', '裝置ID', '時間']);
-  ss.insertSheet('設定').getRange(1, 1, 5, 3).setValues([
+  ss.insertSheet('設定').getRange(1, 1, 7, 3).setValues([
     ['設定', '值', '說明'],
     ['maxVideoSeconds', 30, '影片長度上限（秒）'],
     ['maxFileMB', 300, '單一檔案大小上限（MB）'],
     ['uploadOpen', true, 'TRUE 開放上傳；FALSE 關閉上傳'],
     ['wallSeconds', 6, '投影牆每張顯示秒數'],
+    ['review', false, 'TRUE 新上傳先不公開，把「照片」分頁該列「隱藏」欄的「待審」清掉才顯示；FALSE 直接顯示'],
+    ['maxPerDevice', 50, '每個裝置最多可上傳幾個檔案（0 不限）'],
   ]);
   ss.insertSheet('統計').getRange(1, 1, 6, 2).setValues([
     ['上傳總數', '=COUNTA(\'照片\'!B2:B)'],
@@ -64,8 +66,8 @@ function doGet(e) {
     if (r[1] === me) mine[r[0]] = true;
   });
   const photos = ss.getSheetByName('照片').getDataRange().getValues().slice(1)
-    .filter(r => r[1] && !r[7])
-    .map(r => ({ id: r[1], v: r[2] === 'video', name: String(r[4]), tag: String(r[5]), msg: String(r[6]),
+    .filter(r => r[1] && (!r[7] || (r[7] === '待審' && me && r[3] === me)))   // 待審的只給上傳者自己看
+    .map(r => ({ id: r[1], v: r[2] === 'video', name: String(r[4]), tag: String(r[5]), msg: String(r[6]), wait: !!r[7],
                  likes: likes[r[1]] || 0, liked: !!mine[r[1]] }))
     .reverse();
   return json({ settings: settings(ss), photos: photos });
@@ -75,6 +77,7 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (!okKey(d.k)) return json({ error: 'key' });
+    if (d.action === 'seat') return json(seat(d));
     if (!okId(d.user)) return json({ error: 'user' });
     if (d.action === 'like') return json(like(d));
     if (d.action === 'put') return json(put(d));
@@ -109,6 +112,8 @@ function put(d) {
   if (!(total > 0 && total <= s.maxFileMB * 1048576 && offset >= 0)) return { error: 'size' };
   let url = d.session;
   if (!url) {
+    if (s.maxPerDevice > 0 && ss.getSheetByName('照片').getDataRange().getValues()
+        .filter(r => r[3] === d.user).length >= s.maxPerDevice) return { error: 'quota' };
     const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
       method: 'post',
       contentType: 'application/json',
@@ -134,8 +139,22 @@ function put(d) {
   if (code !== 200 && code !== 201) return { error: 'drive ' + code };
   const id = JSON.parse(r.getContentText()).id;
   ss.getSheetByName('照片').appendRow([new Date(), id, d.type.split('/')[0], d.user,
-    clean(d.userName, 20), d.user.slice(0, 4), clean(d.msg, 100), '']);
+    clean(d.userName, 20), d.user.slice(0, 4), clean(d.msg, 100), s.review ? '待審' : '']);
   return { ok: true, done: true };
+}
+
+// 座位查詢：名單在另一份試算表（ID 存在指令碼屬性 SEAT_SHEET_ID，需分享給執行帳號），
+// A 欄桌名、B 欄姓名、C 欄可選填桌號。至少要輸入兩個字、最多回十筆，避免被人整份撈走。
+function seat(d) {
+  const norm = x => String(x).replace(/\s+/g, '').toLowerCase();
+  const q = norm(d.q || '');
+  if (q.length < 2) return { error: 'short' };
+  const rows = SpreadsheetApp.openById(P.getProperty('SEAT_SHEET_ID')).getSheets()[0].getDataRange().getValues()
+    .map(r => ({ table: String(r[0]).trim(), name: String(r[1]).trim(), no: String(r[2] == null ? '' : r[2]).trim() }))
+    .filter(r => r.name && r.name !== '姓名');
+  const hits = rows.filter(r => norm(r.name).indexOf(q) >= 0).slice(0, 10);
+  return { ok: true, hits: hits.map(h => ({ name: h.name, table: h.table, no: h.no,
+    mates: rows.filter(o => o !== h && o.table === h.table).map(o => o.name) })) };
 }
 
 // 在編輯器執行這個函式可叫出授權視窗（put 需要「連線到外部服務」權限）。
