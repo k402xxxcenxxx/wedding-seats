@@ -52,6 +52,7 @@ const DEFAULTS = [
   ['wishSpeed', 120, '彈幕速度：每秒移動幾像素，數字越大越快'],
   ['wishSize', 40, '彈幕字體大小（像素）'],
   ['maxWishesPerDevice', 20, '每個裝置最多可留幾則彈幕（0 不限）'],
+  ['wallVideo', '', '投影牆輪播影片：貼上 Google 雲端硬碟影片的分享連結（共用設定需為「知道連結的任何人」）'],
 ];
 
 // 可重複執行：補上後台缺少的分頁與設定列，已有的不會動。改版後在編輯器執行一次。
@@ -87,10 +88,11 @@ function doGet(e) {
     .map(r => ({ id: r[1], v: r[2] === 'video', name: String(r[4]), tag: String(r[5]), msg: String(r[6]), wait: !!r[7],
                  likes: likes[r[1]] || 0, liked: !!mine[r[1]] }))
     .reverse();
-  // 彈幕：只回最新 100 則未隱藏的，給投影牆的跑馬燈用。
+  // 彈幕：未隱藏的最新 200 則，依收到時間排序；t 讓投影牆記得播到哪裡，每則只播一次。
   const wishes = ss.getSheetByName('彈幕').getDataRange().getValues().slice(1)
-    .filter(r => r[4] && !r[5]).slice(-100)
-    .map(r => ({ id: new Date(r[0]).getTime() + '-' + r[3], name: String(r[2]), text: String(r[4]) }));
+    .filter(r => r[4] && !r[5]).slice(-200)
+    .map(r => ({ t: new Date(r[0]).getTime(), name: String(r[2]), text: String(r[4]) }))
+    .sort((a, b) => a.t - b.t);
   return json({ settings: settings(ss), photos: photos, wishes: wishes });
 }
 
@@ -174,7 +176,7 @@ function wish(d) {
   if (s.maxWishesPerDevice > 0 && sh.getDataRange().getValues()
       .filter(r => r[1] === d.user).length >= s.maxWishesPerDevice) return { error: 'quota' };
   sh.appendRow([new Date(), d.user, clean(d.userName, 20), d.user.slice(0, 4), text, s.review ? '待審' : '']);
-  return { ok: true };
+  return { ok: true, review: !!s.review };
 }
 
 // 座位查詢：名單在另一份試算表（ID 存在指令碼屬性 SEAT_SHEET_ID，需分享給執行帳號），
