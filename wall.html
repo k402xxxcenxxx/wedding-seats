@@ -12,42 +12,50 @@
   img.on { opacity: 1; }
   @media (prefers-reduced-motion: no-preference) { img { transition: opacity .8s; } }
   #tip { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 14px; text-align: center;
-         font-size: 26px; letter-spacing: .1em; background: rgba(0, 0, 0, .55); }
+         font-size: 26px; letter-spacing: .1em; background: rgba(0, 0, 0, .55); overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
 <img id="pic" alt="賓客上傳的照片">
-<p id="tip">打開 LINE 選單「照片上傳」，您的照片會出現在這裡</p>
+<p id="tip"></p>
 
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
-const SHOW_MS = 6000, POLL_MS = 20000;
-const pic = document.getElementById('pic');
-let all = [], queue = [];
+const POLL_MS = 20000, HINT = '打開 LINE 選單「照片上傳」，您的照片會出現在這裡';
+const pic = document.getElementById('pic'), tip = document.getElementById('tip');
+let all = [], queue = [], showMs = 6000, cur = null;
 const seen = new Set();
+tip.textContent = HINT;
 
 async function poll() {
   try {
-    const list = await (await fetch(API)).json();   // 新到舊
-    all = list.map(f => f.id);
-    for (const id of [...all].reverse()) if (!seen.has(id)) { seen.add(id); queue.push(id); }
+    const d = await (await fetch(API)).json();
+    all = d.photos;   // 新到舊；後台標記隱藏的不會在裡面
+    showMs = Math.max(2, Number(d.settings.wallSeconds) || 6) * 1000;
+    for (const p of [...all].reverse()) if (!seen.has(p.id)) { seen.add(p.id); queue.push(p); }
   } catch {}   // 網路斷線就沿用舊清單，下次再試
 }
 
 // 新照片優先播，播完後隨機輪播全部。
 function next() {
-  const id = queue.shift() ?? all[Math.floor(Math.random() * all.length)];
-  const src = `https://drive.google.com/thumbnail?id=${id}&sz=w1920`;
-  if (!id || src === pic.src) return;   // 同一張不重設，否則不會觸發 onload 而變黑
-  pic.classList.remove('on');
-  pic.src = src;
+  setTimeout(next, showMs);
+  let p = queue.shift();
+  if (p && !all.some(a => a.id === p.id)) p = null;   // 排隊期間被隱藏了
+  p ??= all[Math.floor(Math.random() * all.length)];
+  if (!p || p.id === cur?.id) return;
+  // 先在背景載入，成功才換上去；剛上傳的檔案縮圖可能還沒好，失敗就排回隊伍稍後再試，畫面不會變黑。
+  const im = new Image();
+  im.onload = () => { cur = p; pic.classList.remove('on'); pic.src = im.src; };
+  im.onerror = () => { if ((p.tries = (p.tries || 0) + 1) < 5) queue.push(p); };
+  im.src = `https://drive.google.com/thumbnail?id=${p.id}&sz=w1920`;
 }
-pic.onload = () => pic.classList.add('on');
-pic.onerror = next;   // 剛上傳的檔案縮圖可能還沒好，跳下一張
+pic.onload = () => {
+  pic.classList.add('on');
+  tip.textContent = cur.name ? `${cur.name}${cur.msg ? '：' + cur.msg : ''}` : HINT;
+};
 
 poll().then(next);
 setInterval(poll, POLL_MS);
-setInterval(next, SHOW_MS);
 </script>
 </body>
 </html>
