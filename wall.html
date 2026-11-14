@@ -38,7 +38,8 @@
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
 const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
-const POLL_MS = 15000;
+// 每次問完後端（約 2 秒）再等 3 秒問下一次：新留言約 2–5 秒內就會排進跑馬燈，請求也不會重疊。
+const POLL_MS = 3000;
 const $ = id => document.getElementById(id);
 const vid = $('vid'), band = $('band');
 
@@ -126,7 +127,10 @@ $('local').onchange = e => {
 };
 
 if (!KEY) $('info').textContent = '連結無效，請用含金鑰的投影牆網址開啟。';
-else { poll().then(runWish); setInterval(poll, POLL_MS); }
+else {
+  const loop = () => poll().finally(() => setTimeout(loop, POLL_MS));
+  poll().then(runWish).finally(() => setTimeout(loop, POLL_MS));
+}
 </script>
 </body>
 </html>
