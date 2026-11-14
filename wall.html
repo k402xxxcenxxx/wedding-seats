@@ -29,7 +29,9 @@ tip.textContent = HINT;
 
 async function poll() {
   try {
-    const d = await (await fetch(API)).json();
+    const k = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+    const d = await (await fetch(`${API}?k=${encodeURIComponent(k)}`)).json();
+    if (d.error) { tip.textContent = '連結無效，請用含金鑰的投影牆網址開啟'; return; }
     all = d.photos;   // 新到舊；後台標記隱藏的不會在裡面
     showMs = Math.max(2, Number(d.settings.wallSeconds) || 6) * 1000;
     for (const p of [...all].reverse()) if (!seen.has(p.id)) { seen.add(p.id); queue.push(p); }

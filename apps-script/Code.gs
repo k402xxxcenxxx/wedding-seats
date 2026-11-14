@@ -8,6 +8,8 @@ const json = o => ContentService.createTextOutput(JSON.stringify(o)).setMimeType
 // 去掉開頭的 = + - @，避免賓客輸入的文字在試算表裡被當成公式執行。
 const clean = (s, n) => String(s == null ? '' : s).replace(/^[=+\-@\s]+/, '').slice(0, n);
 const okId = s => /^[\w-]{8,80}$/.test(s);
+// 通關金鑰只存在指令碼屬性裡，不進 GitHub；沒設定時一律拒絕。
+const okKey = k => !!k && k === P.getProperty('KEY');
 
 function setup() {
   if (!P.getProperty('FOLDER_ID')) {
@@ -53,6 +55,7 @@ function settings(ss) {
 
 // 回傳設定與未隱藏的照片（新到舊），帶 ?user= 時附上該裝置是否按過愛心。
 function doGet(e) {
+  if (!okKey(e.parameter.k)) return json({ error: 'key' });
   const me = e.parameter.user || '';
   const ss = book();
   const likes = {}, mine = {};
@@ -71,6 +74,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (!okKey(d.k)) return json({ error: 'key' });
     if (!okId(d.user)) return json({ error: 'user' });
     if (d.action === 'like') return json(like(d));
     if (d.action === 'put') return json(put(d));
@@ -137,4 +141,10 @@ function put(d) {
 // 在編輯器執行這個函式可叫出授權視窗（put 需要「連線到外部服務」權限）。
 function authorize() {
   UrlFetchApp.fetch('https://www.google.com/generate_204');
+}
+
+// 在編輯器執行：第一次會產生金鑰，之後只顯示。要換金鑰就到「專案設定 > 指令碼屬性」刪掉 KEY 再執行一次。
+function showKey() {
+  if (!P.getProperty('KEY')) P.setProperty('KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 16));
+  Logger.log(P.getProperty('KEY'));
 }

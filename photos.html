@@ -88,10 +88,12 @@
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
 // Drive 續傳上傳要求每段是 256 KB 的倍數。每次請求約有 2 秒固定延遲，所以用 8 MB：多數照片一次傳完。
 const CHUNK = 8 * 1024 * 1024;
+// 通關金鑰放在網址的 # 後面（不會送到 GitHub 的伺服器），由 LINE 選單的連結帶進來。
+const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const thumb = (id, w) => `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`;
-const ERR = { closed: '目前未開放上傳', size: '超過檔案大小上限', type: '只接受照片或影片' };
+const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', size: '超過檔案大小上限', type: '只接受照片或影片' };
 
 // 每個裝置一組隨機 ID，同名的人靠 ID 前四碼區分；清除瀏覽器資料後會重新產生。
 let me = null, settings = {}, photos = [];
@@ -107,7 +109,7 @@ function setMe(name) {
 }
 
 async function post(body) {
-  body = JSON.stringify({ ...body, user: me.id });
+  body = JSON.stringify({ ...body, user: me.id, k: KEY });
   for (let i = 0; ; i++) {
     try {
       // 不設 Content-Type：維持 text/plain 才不會觸發 CORS preflight（Apps Script 不回應 OPTIONS）。
@@ -121,7 +123,8 @@ async function post(body) {
 
 async function load() {
   try {
-    const d = await (await fetch(`${API}?user=${me.id}`)).json();
+    const d = await (await fetch(`${API}?user=${me.id}&k=${encodeURIComponent(KEY)}`)).json();
+    if (d.error) { $('rule').textContent = ERR[d.error] || '載入失敗'; return; }
     settings = d.settings; photos = d.photos;
     $('rule').textContent = settings.uploadOpen
       ? `可一次選多個檔案。影片長度上限 ${settings.maxVideoSeconds} 秒。`
