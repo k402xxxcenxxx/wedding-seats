@@ -29,15 +29,6 @@ function setup() {
     photos.appendRow([f.getDateCreated(), f.getId(), f.getMimeType().split('/')[0], '', '', '', '', '']);
   }
   ss.insertSheet('愛心').appendRow(['檔案ID', '裝置ID', '時間']);
-  ss.insertSheet('設定').getRange(1, 1, 7, 3).setValues([
-    ['設定', '值', '說明'],
-    ['maxVideoSeconds', 30, '影片長度上限（秒）'],
-    ['maxFileMB', 300, '單一檔案大小上限（MB）'],
-    ['uploadOpen', true, 'TRUE 開放上傳；FALSE 關閉上傳'],
-    ['wallSeconds', 6, '投影牆每張顯示秒數'],
-    ['review', false, 'TRUE 新上傳先不公開，把「照片」分頁該列「隱藏」欄的「待審」清掉才顯示；FALSE 直接顯示'],
-    ['maxPerDevice', 50, '每個裝置最多可上傳幾個檔案（0 不限）'],
-  ]);
   ss.insertSheet('統計').getRange(1, 1, 6, 2).setValues([
     ['上傳總數', '=COUNTA(\'照片\'!B2:B)'],
     ['照片', '=COUNTIF(\'照片\'!C2:C,"image")'],
@@ -47,6 +38,32 @@ function setup() {
     ['每人上傳數', '=IFERROR(QUERY(\'照片\'!B:E,"select E, count(B) where B is not null group by E order by count(B) desc label count(B) \'\'",1),"")'],
   ]);
   P.setProperty('SHEET_ID', ss.getId());
+  upgrade();
+}
+
+const DEFAULTS = [
+  ['maxVideoSeconds', 30, '影片長度上限（秒）'],
+  ['maxFileMB', 300, '單一檔案大小上限（MB）'],
+  ['uploadOpen', true, 'TRUE 開放上傳與留言；FALSE 關閉'],
+  ['wallSeconds', 6, '投影牆每張顯示秒數'],
+  ['review', false, 'TRUE 新上傳與彈幕先不公開，把該列「隱藏」欄的「待審」清掉才顯示；FALSE 直接顯示'],
+  ['maxPerDevice', 50, '每個裝置最多可上傳幾個檔案（0 不限）'],
+  ['wishPosition', '上', '彈幕跑馬燈位置：上 或 下'],
+  ['wishSpeed', 120, '彈幕速度：每秒移動幾像素，數字越大越快'],
+  ['wishSize', 40, '彈幕字體大小（像素）'],
+  ['maxWishesPerDevice', 20, '每個裝置最多可留幾則彈幕（0 不限）'],
+];
+
+// 可重複執行：補上後台缺少的分頁與設定列，已有的不會動。改版後在編輯器執行一次。
+function upgrade() {
+  const ss = book();
+  const st = ss.getSheetByName('設定') || ss.insertSheet('設定');
+  if (!st.getLastRow()) st.appendRow(['設定', '值', '說明']);
+  const have = st.getDataRange().getValues().map(r => r[0]);
+  DEFAULTS.forEach(r => { if (have.indexOf(r[0]) < 0) st.appendRow(r); });
+  if (!ss.getSheetByName('彈幕')) {
+    ss.insertSheet('彈幕').appendRow(['時間', '裝置ID', '姓名', '識別碼', '內容', '隱藏（填任何字就不顯示）']);
+  }
 }
 
 function settings(ss) {
@@ -70,7 +87,11 @@ function doGet(e) {
     .map(r => ({ id: r[1], v: r[2] === 'video', name: String(r[4]), tag: String(r[5]), msg: String(r[6]), wait: !!r[7],
                  likes: likes[r[1]] || 0, liked: !!mine[r[1]] }))
     .reverse();
-  return json({ settings: settings(ss), photos: photos });
+  // 彈幕：只回最新 100 則未隱藏的，給投影牆的跑馬燈用。
+  const wishes = ss.getSheetByName('彈幕').getDataRange().getValues().slice(1)
+    .filter(r => r[4] && !r[5]).slice(-100)
+    .map(r => ({ id: new Date(r[0]).getTime() + '-' + r[3], name: String(r[2]), text: String(r[4]) }));
+  return json({ settings: settings(ss), photos: photos, wishes: wishes });
 }
 
 function doPost(e) {
@@ -81,6 +102,7 @@ function doPost(e) {
     if (!okId(d.user)) return json({ error: 'user' });
     if (d.action === 'like') return json(like(d));
     if (d.action === 'put') return json(put(d));
+    if (d.action === 'wish') return json(wish(d));
     return json({ error: 'action' });
   } catch (err) {
     return json({ error: String(err) });
@@ -141,6 +163,18 @@ function put(d) {
   ss.getSheetByName('照片').appendRow([new Date(), id, d.type.split('/')[0], d.user,
     clean(d.userName, 20), d.user.slice(0, 4), clean(d.msg, 100), s.review ? '待審' : '']);
   return { ok: true, done: true };
+}
+
+// 彈幕留言：不用傳照片，只留一句話，會以跑馬燈經過投影牆。
+function wish(d) {
+  const ss = book(), s = settings(ss), text = clean(d.text, 50);
+  if (!s.uploadOpen) return { error: 'closed' };
+  if (!text) return { error: 'empty' };
+  const sh = ss.getSheetByName('彈幕');
+  if (s.maxWishesPerDevice > 0 && sh.getDataRange().getValues()
+      .filter(r => r[1] === d.user).length >= s.maxWishesPerDevice) return { error: 'quota' };
+  sh.appendRow([new Date(), d.user, clean(d.userName, 20), d.user.slice(0, 4), text, s.review ? '待審' : '']);
+  return { ok: true };
 }
 
 // 座位查詢：名單在另一份試算表（ID 存在指令碼屬性 SEAT_SHEET_ID，需分享給執行帳號），
