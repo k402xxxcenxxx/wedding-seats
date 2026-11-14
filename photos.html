@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>照片上傳｜婚禮</title>
+<title>祝福留言｜婚禮</title>
 <style>
   :root { --gold: #c8962e; --ink: #222; --line: #e6d9bf; }
   * { box-sizing: border-box; }
@@ -12,51 +12,24 @@
          font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; text-align: center; }
   .en { margin: 0; color: var(--gold); letter-spacing: .35em; font-size: 14px; }
   h1 { margin: 6px 0 4px; font-size: 30px; letter-spacing: .3em; font-weight: 600; }
-  h2 { margin: 32px 0 12px; font-size: 20px; letter-spacing: .2em; font-weight: 600; color: var(--gold); }
   .sub { margin: 0 0 20px; color: var(--gold); font-size: 14px; letter-spacing: .1em; }
+  label { display: block; margin-bottom: 8px; }
   input, textarea, button { font: inherit; font-size: 18px; padding: 12px 14px; border: 1px solid var(--gold); border-radius: 8px; }
-  textarea { width: 100%; margin-bottom: 10px; resize: vertical; }
+  textarea { width: 100%; resize: vertical; }
   button { background: var(--gold); color: #fff; cursor: pointer; }
-  .row { display: flex; gap: 8px; margin-top: 8px; }
+  button:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; }
   .row input { flex: 1; min-width: 0; }
+  .wide { width: 100%; margin-top: 10px; }
   .link { padding: 2px 8px; font-size: 14px; background: #fff; color: var(--gold); }
-  .pick { position: relative; display: block; padding: 24px 14px; border-radius: 8px; background: var(--gold);
-          color: #fff; font-size: 20px; cursor: pointer; }
-  .pick:focus-within { outline: 3px solid #8a6414; outline-offset: 2px; }
-  .pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-  .pick.busy { opacity: .5; }
-  #msg { min-height: 1.5em; margin: 14px 0 6px; font-size: 17px; }
-  progress { width: 100%; accent-color: var(--gold); }
-  .spin { display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -2px; border: 3px solid var(--line);
-          border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
-  .spin[hidden] { display: none; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  /* 減少動態效果時轉慢而不是停掉：它是「還在傳」的唯一即時訊號。 */
-  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
-  #fail { color: #b00020; font-size: 15px; white-space: pre-line; }
   .note { font-size: 14px; color: #777; }
-  #grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  figure { margin: 0; }
-  .shot { display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 6px; overflow: hidden;
-          background: #f3ecdd; position: relative; }
-  .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .shot.video::after { content: "▶"; position: absolute; right: 6px; bottom: 4px; color: #fff; text-shadow: 0 0 4px #000; }
-  figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-size: 13px; }
-  figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .like { padding: 4px 6px; font-size: 14px; background: #fff; color: var(--ink); border: 0; white-space: nowrap; }
-  dialog { width: min(96vw, 560px); padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
-  dialog::backdrop { background: rgba(0, 0, 0, .7); }
-  #media img, #media iframe { width: 100%; max-height: 65vh; object-fit: contain; border: 0; display: block; }
-  #media iframe { height: 60vh; }
-  #cap { margin: 10px 0; text-align: left; overflow-wrap: anywhere; }
-  .bar { display: flex; justify-content: space-between; align-items: center; }
-  .bar .like { font-size: 20px; }
+  #msg { min-height: 1.5em; margin: 14px 0; font-size: 17px; }
 </style>
 </head>
 <body>
 <header>
-  <p class="en">SHARE YOUR PHOTOS</p>
-  <h1>照片上傳</h1>
+  <p class="en">SEND YOUR WISHES</p>
+  <h1>祝福留言</h1>
   <p class="sub">2026.12.05　柯民 &amp; 家青</p>
 </header>
 
@@ -70,46 +43,25 @@
 
 <main id="app" hidden>
   <p><span id="me"></span> <button type="button" class="link" id="rename">改名</button></p>
-  <textarea id="wish" maxlength="100" rows="2" placeholder="想對新人說的祝福（選填，會跟照片一起顯示）" aria-label="祝福語"></textarea>
-  <label class="pick" id="pick">選擇照片或影片
-    <input id="files" type="file" accept="image/*,video/*" multiple>
-  </label>
-  <p id="msg"><span class="spin" id="spin" aria-hidden="true" hidden></span><span id="msgText" role="status" aria-live="polite"></span></p>
-  <progress id="bar" max="1" value="0" hidden></progress>
-  <p id="fail"></p>
-  <p class="note" id="rule"></p>
-
-  <h2>彈幕留言</h2>
-  <form id="wishForm" class="row">
-    <input id="dm" maxlength="50" required aria-label="彈幕留言" placeholder="不用傳照片，留一句話跑過大螢幕">
-    <button>送出</button>
+  <form id="wishForm">
+    <label for="dm">想對新人說的話</label>
+    <textarea id="dm" maxlength="50" rows="3" required placeholder="例如：新婚快樂，百年好合！🎉"></textarea>
+    <button class="wide">送出祝福</button>
   </form>
-  <p class="note" id="dmMsg" role="status" aria-live="polite"></p>
-
-  <h2>大家的照片</h2>
-  <div id="grid"></div>
-  <p class="note" id="empty" hidden>還沒有照片，來當第一個上傳的人吧！</p>
+  <p id="msg" role="status" aria-live="polite"></p>
+  <p class="note">您的祝福會以跑馬燈出現在現場大螢幕上，每則播出一次。最多 50 字，可以用表情符號。</p>
 </main>
-
-<dialog id="view" aria-label="照片檢視">
-  <div id="media"></div>
-  <p id="cap"></p>
-  <div class="bar"><span id="viewLike"></span><button type="button" class="link" id="close">關閉</button></div>
-</dialog>
 
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
-// Drive 續傳上傳要求每段是 256 KB 的倍數。每次請求約有 2 秒固定延遲，所以用 8 MB：多數照片一次傳完。
-const CHUNK = 8 * 1024 * 1024;
 // 通關金鑰放在網址的 # 後面（不會送到 GitHub 的伺服器），由 LINE 選單的連結帶進來。
 const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const thumb = (id, w) => `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`;
-const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', quota: '已達每人的數量上限', empty: '請先輸入內容', size: '超過檔案大小上限', type: '只接受照片或影片' };
+const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放留言', quota: '已達每人的留言上限', empty: '請先輸入內容' };
 
-// 每個裝置一組隨機 ID，同名的人靠 ID 前四碼區分；清除瀏覽器資料後會重新產生。
-let me = null, settings = {}, photos = [];
+// 每個裝置一組隨機 ID（後台用來計算每人上限，賓客看不到）；清除瀏覽器資料後會重新產生。
+let me = null;
 try { me = JSON.parse(localStorage.getItem('guest')); } catch {}
 
 function setMe(name) {
@@ -134,169 +86,33 @@ async function post(body) {
   }
 }
 
-async function load() {
-  try {
-    const d = await (await fetch(`${API}?user=${me.id}&k=${encodeURIComponent(KEY)}`)).json();
-    if (d.error) { $('rule').textContent = ERR[d.error] || '載入失敗'; return; }
-    settings = d.settings; photos = d.photos;
-    $('rule').textContent = settings.uploadOpen
-      ? `可一次選多個檔案。影片長度上限 ${settings.maxVideoSeconds} 秒。`
-      : '目前未開放上傳。';
-    draw();
-  } catch {}   // 載入失敗就保留舊畫面，下次輪詢再試
-}
-
-function likeBtn(p) {
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'like';
-  const paint = () => {
-    b.textContent = `${p.liked ? '❤️' : '🤍'} ${p.likes}`;
-    b.setAttribute('aria-pressed', p.liked);
-    b.setAttribute('aria-label', `愛心，目前 ${p.likes} 個`);
-  };
-  const flip = () => { p.liked = !p.liked; p.likes += p.liked ? 1 : -1; paint(); };
-  paint();
-  b.onclick = async () => {
-    flip();
-    try { if (!(await post({ action: 'like', id: p.id })).ok) flip(); } catch { flip(); }
-  };
-  return b;
-}
-
-function draw() {
-  $('empty').hidden = photos.length > 0;
-  $('grid').replaceChildren(...photos.map(p => {
-    const fig = document.createElement('figure');
-    const shot = document.createElement('button');
-    shot.type = 'button'; shot.className = p.v ? 'shot video' : 'shot';
-    const img = document.createElement('img');
-    img.loading = 'lazy'; img.src = thumb(p.id, 400);
-    img.alt = `${p.name || '賓客'}上傳的${p.v ? '影片' : '照片'}`;
-    shot.append(img);
-    shot.onclick = () => view(p);
-    const cap = document.createElement('figcaption');
-    const who = document.createElement('span');
-    who.textContent = (p.wait ? '審核中・' : '') + (p.name || '賓客');
-    cap.append(who, likeBtn(p));
-    fig.append(shot, cap);
-    return fig;
-  }));
-}
-
-function view(p) {
-  const el = document.createElement(p.v ? 'iframe' : 'img');
-  if (p.v) { el.src = `https://drive.google.com/file/d/${p.id}/preview`; el.title = '影片'; el.allow = 'autoplay; fullscreen'; }
-  else { el.src = thumb(p.id, 1600); el.alt = ''; }
-  $('media').replaceChildren(el);
-  $('cap').textContent = `${p.wait ? '（審核中，目前只有您看得到）' : ''}${p.name || '賓客'}${p.msg ? '：' + p.msg : ''}`;
-  $('viewLike').replaceChildren(likeBtn(p));
-  $('view').showModal();
-}
-$('close').onclick = () => $('view').close();
-$('view').addEventListener('close', () => { $('media').replaceChildren(); draw(); });
-
-const b64 = blob => new Promise((ok, no) => {
-  const r = new FileReader();
-  r.onload = () => ok(r.result.split(',')[1]);
-  r.onerror = no;
-  r.readAsDataURL(blob);
-});
-
-// 讀不到長度（瀏覽器不支援該格式）時回傳 0，放行。
-const seconds = f => new Promise(ok => {
-  const v = document.createElement('video');
-  v.preload = 'metadata';
-  v.onloadedmetadata = () => ok(v.duration || 0);
-  v.onerror = () => ok(0);
-  setTimeout(() => ok(0), 5000);
-  v.src = URL.createObjectURL(f);
-});
-
-async function upload(f, msg, onProgress) {
-  let session = null;
-  for (let offset = 0; offset < f.size; offset += CHUNK) {
-    const part = f.slice(offset, offset + CHUNK);
-    const data = await b64(part);
-    const t0 = performance.now();
-    const r = await post({ action: 'put', userName: me.name, msg, name: f.name, type: f.type,
-                           total: f.size, offset, session, data });
-    if (!r.ok) throw new Error(ERR[r.error] || '上傳失敗，請再試一次');
-    session = r.session;
-    onProgress(offset + part.size, part.size / ((performance.now() - t0) / 1000));
-  }
-}
-
-$('files').addEventListener('change', async e => {
-  const files = [...e.target.files];
-  if (!files.length) return;
-  e.target.disabled = true;
-  $('pick').classList.add('busy');
-  $('fail').textContent = '';
-  $('bar').hidden = false;
-  $('bar').removeAttribute('value');   // 還沒有進度時顯示來回跑的動畫
-  $('spin').hidden = false;
-  const msg = $('wish').value.trim();
-  const all = files.reduce((n, f) => n + f.size, 0);
-  let sent = 0, done = 0, rate = '計算速率中…'; const failed = [];
-  for (const [i, f] of files.entries()) {
-    const say = n => { $('msgText').textContent = `上傳中 ${i + 1} / ${files.length}　${Math.round((sent + n) / all * 100)}%　${rate}`; };
-    say(0);
-    try {
-      if (!/^(image|video)\//.test(f.type)) throw new Error(ERR.type);
-      if (f.type.startsWith('video/') && await seconds(f) > settings.maxVideoSeconds)
-        throw new Error(`影片超過 ${settings.maxVideoSeconds} 秒`);
-      await upload(f, msg, (n, speed) => {
-        $('bar').value = (sent + n) / all;
-        rate = `${(speed / 1048576).toFixed(1)} MB/s`;
-        say(n);
-      });
-      done++;
-    } catch (err) {
-      failed.push(`${f.name}（${err.message}）`);
-    }
-    sent += f.size;
-    $('bar').value = sent / all;
-  }
-  $('spin').hidden = true;
-  $('msgText').textContent = done ? `已上傳 ${done} 個檔案，謝謝您的分享！` : '沒有檔案上傳成功。';
-  $('fail').textContent = failed.join('\n');
-  $('bar').hidden = true;
-  if (done) $('wish').value = '';
-  e.target.value = '';
-  e.target.disabled = false;
-  $('pick').classList.remove('busy');
-  load();
-});
-
 $('wishForm').addEventListener('submit', async e => {
   e.preventDefault();
   const text = $('dm').value.trim();
   if (!text) return;
   const btn = e.target.querySelector('button');
   btn.disabled = true;
-  $('dmMsg').textContent = '送出中…';
+  $('msg').textContent = '送出中…';
   let r;
   try { r = await post({ action: 'wish', userName: me.name, text }); } catch { r = {}; }
   btn.disabled = false;
   if (r.ok) {
     $('dm').value = '';
-    $('dmMsg').textContent = settings.review ? '已送出，審核後會出現在大螢幕。' : '已送出，稍後會跑過大螢幕！';
+    $('msg').textContent = r.review ? '已送出，審核後會出現在大螢幕。' : '已送出，稍後會跑過大螢幕！謝謝您的祝福 ❤️';
   } else {
-    $('dmMsg').textContent = ERR[r.error] || '送出失敗，請再試一次。';
+    $('msg').textContent = ERR[r.error] || '送出失敗，請再試一次。';
   }
 });
 
 $('nameForm').addEventListener('submit', e => {
   e.preventDefault();
   const name = $('name').value.trim();
-  if (!name) return;
-  const first = !me;
-  setMe(name);
-  if (first) { load(); setInterval(() => { if (!$('view').open) load(); }, 30000); }
+  if (name) setMe(name);
 });
 $('rename').onclick = () => { $('name').value = me.name; $('app').hidden = true; $('nameForm').hidden = false; $('name').focus(); };
 
-if (me?.id && me.name) { setMe(me.name); load(); setInterval(() => { if (!$('view').open) load(); }, 30000); }
+if (!KEY) { $('nameForm').hidden = true; document.body.append(Object.assign(document.createElement('p'), { textContent: ERR.key })); }
+else if (me?.id && me.name) setMe(me.name);
 else { me = null; $('nameForm').hidden = false; }
 </script>
 </body>

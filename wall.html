@@ -4,102 +4,129 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>照片牆｜婚禮</title>
+<title>投影牆｜婚禮</title>
 <!-- 芫荽（Iansui）：台灣繁體中文手寫風字體，含英文；Google Fonts 會依畫面上出現的字分段下載。 -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Iansui&display=swap">
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
-               font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
-  img { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
-  img.on { opacity: 1; }
-  @media (prefers-reduced-motion: no-preference) { img { transition: opacity .8s; } }
-  /* 手寫體沒有的字（含 emoji）會依序退回系統的彩色 emoji 字型與一般中文字型。 */
-  #tip { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 14px 24px 18px; text-align: center;
-         font-family: "Iansui", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
-         font-size: clamp(26px, 3.2vw, 56px); line-height: 1.35; background: rgba(0, 0, 0, .55); overflow-wrap: anywhere; }
-  /* 彈幕跑馬燈：自己佔一條，照片和下方的姓名祝福語會讓出這條的高度，互不遮蓋。 */
-  #band { position: fixed; left: 0; right: 0; overflow: hidden; background: #111; white-space: nowrap;
-          font-family: "Iansui", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+               font-family: "Iansui", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  /* 影片佔掉跑馬燈以外的整個畫面，兩者互不遮蓋。 */
+  video { position: fixed; left: 0; width: 100%; object-fit: contain; background: #000; }
+  #band { position: fixed; left: 0; right: 0; overflow: hidden; background: #111; white-space: nowrap; }
   #band span { position: absolute; left: 0; top: 0; will-change: transform; }
+  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+           gap: 18px; background: rgba(0, 0, 0, .85); font-size: 22px; text-align: center; padding: 24px; }
+  #start[hidden] { display: none; }
+  #start button { font: inherit; font-size: 32px; padding: 16px 40px; border: 0; border-radius: 12px; background: #c8962e; color: #fff; cursor: pointer; }
+  #start label { font-size: 16px; color: #bbb; cursor: pointer; }
+  #start input { font: inherit; font-size: 14px; color: #bbb; }
+  #info { color: #e6c27a; max-width: 900px; }
 </style>
 </head>
 <body>
-<img id="pic" alt="賓客上傳的照片">
-<p id="tip"></p>
-<div id="band" aria-label="賓客彈幕留言" hidden></div>
+<video id="vid" loop playsinline preload="auto" aria-label="婚禮迎賓輪播影片"></video>
+<div id="band" aria-label="賓客祝福跑馬燈"></div>
+
+<div id="start">
+  <button id="go">▶ 開始播放（含聲音）</button>
+  <p id="info">讀取設定中…</p>
+  <label>雲端影片播不出來時，改用這台電腦裡的影片檔：<input type="file" id="local" accept="video/*"></label>
+  <p style="font-size:14px;color:#888">按下開始後會進入全螢幕；按 Esc 離開全螢幕，重新整理會回到這個畫面。</p>
+</div>
 
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
-const POLL_MS = 20000, HINT = '打開 LINE 選單「照片上傳」，您的照片會出現在這裡';
-const pic = document.getElementById('pic'), tip = document.getElementById('tip'), band = document.getElementById('band');
-let all = [], queue = [], showMs = 6000, cur = null;
-const seen = new Set();
-let wishes = [], wishQueue = [], wishAt = 0, speed = 120;
-tip.textContent = HINT;
+const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+const POLL_MS = 15000;
+const $ = id => document.getElementById(id);
+const vid = $('vid'), band = $('band');
+
+// 已播過的最後一則的時間。存在這台電腦的瀏覽器裡，重新整理後不會把舊留言再播一次。
+let lastT = 0;
+try { lastT = Number(localStorage.getItem('wallLastT')) || 0; } catch {}
+let queue = [], speed = 120, size = 40, videoId = null, usingLocal = false, started = false;
+
+// 從分享連結、網址或單純的 ID 取出雲端硬碟檔案 ID。
+function driveId(s) {
+  s = String(s || '').trim();
+  const m = s.match(/\/d\/([\w-]{20,})/) || s.match(/[?&]id=([\w-]{20,})/) || s.match(/^([\w-]{20,})$/);
+  return m ? m[1] : '';
+}
+console.assert(driveId('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view?usp=sharing') === '1AbCdEfGhIjKlMnOpQrStUvWxYz'
+  && driveId('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQrStUvWxYz') === '1AbCdEfGhIjKlMnOpQrStUvWxYz' && driveId('') === '', 'driveId');
+
+// 依後台設定擺放跑馬燈（上或下、字體大小、速度）。
+function layout(s) {
+  size = Math.min(200, Math.max(16, Number(s.wishSize) || 40));
+  speed = Math.min(2000, Math.max(20, Number(s.wishSpeed) || 120));
+  const h = Math.round(size * 1.7), bottom = ['下', 'bottom'].includes(String(s.wishPosition).trim());
+  band.style.cssText = `height:${h}px;font-size:${size}px;line-height:${h}px;${bottom ? 'bottom' : 'top'}:0`;
+  vid.style.top = bottom ? '0' : `${h}px`;
+  vid.style.height = `calc(100% - ${h}px)`;
+}
+
+function setVideo(id) {
+  if (usingLocal || id === videoId) return;
+  videoId = id;
+  if (!id) { $('info').textContent = '後台「設定」分頁的 wallVideo 還沒填影片連結。'; return; }
+  $('info').textContent = '影片已設定。';
+  // 雲端硬碟的直接下載網址支援分段讀取，瀏覽器可以邊下載邊播放；confirm=t 略過大檔案的病毒掃描提示頁。
+  vid.src = `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+  if (started) vid.play().catch(() => {});
+}
+vid.onerror = () => {
+  if (usingLocal) return;
+  $('info').textContent = '雲端影片載入失敗：請確認共用設定為「知道連結的任何人」，或改用下方的本機影片檔。';
+  $('start').hidden = false;
+};
 
 async function poll() {
   try {
-    const k = new URLSearchParams(location.hash.slice(1)).get('k') || '';
-    const d = await (await fetch(`${API}?k=${encodeURIComponent(k)}`)).json();
-    if (d.error) { tip.textContent = '連結無效，請用含金鑰的投影牆網址開啟'; return; }
-    all = d.photos;   // 新到舊；後台標記隱藏的不會在裡面
-    showMs = Math.max(2, Number(d.settings.wallSeconds) || 6) * 1000;
-    for (const p of [...all].reverse()) if (!seen.has(p.id)) { seen.add(p.id); queue.push(p); }
-    wishes = d.wishes || [];
-    for (const w of wishes) if (!seen.has(w.id)) { seen.add(w.id); wishQueue.push(w); }
+    const d = await (await fetch(`${API}?k=${encodeURIComponent(KEY)}`)).json();
+    if (d.error) { $('info').textContent = '連結無效，請用含金鑰的投影牆網址開啟。'; return; }
     layout(d.settings);
-  } catch {}   // 網路斷線就沿用舊清單，下次再試
+    setVideo(driveId(d.settings.wallVideo));
+    const known = new Set(queue.map(w => w.t));
+    for (const w of d.wishes) if (w.t > lastT && !known.has(w.t)) queue.push(w);
+    queue.sort((a, b) => a.t - b.t);
+  } catch {}   // 網路斷線就沿用現有內容，下次再試
 }
 
-// 依後台設定擺放跑馬燈（上或下、字體大小、速度）；沒有彈幕時整條收起來，不佔畫面。
-function layout(s) {
-  const size = Math.min(200, Math.max(16, Number(s.wishSize) || 40));
-  const h = wishes.length ? Math.round(size * 1.7) : 0;
-  const bottom = ['下', 'bottom'].includes(String(s.wishPosition).trim());
-  speed = Math.min(2000, Math.max(20, Number(s.wishSpeed) || 120));
-  band.hidden = !h;
-  band.style.cssText = `height:${h}px;font-size:${size}px;line-height:${h}px;${bottom ? 'bottom' : 'top'}:0`;
-  pic.style.top = bottom ? '0' : `${h}px`;
-  pic.style.height = `calc(100% - ${h}px)`;
-  tip.style.bottom = bottom ? `${h}px` : '0';
-}
-
-// 一則接一則由右往左跑：新留言優先，都跑過之後從頭輪播。
+// 依收到時間一則一則由右往左跑，每則只播一次；前一則完全進場並空出一段距離後，下一則才出發。
 function runWish() {
-  let w = wishQueue.shift();
-  if (w && !wishes.some(o => o.id === w.id)) w = null;   // 排隊期間被隱藏了
-  if (!w && wishes.length) w = wishes[wishAt++ % wishes.length];
-  if (!w) { setTimeout(runWish, 2000); return; }
+  const w = queue.shift();
+  if (!w) { setTimeout(runWish, 1000); return; }
+  lastT = w.t;
+  try { localStorage.setItem('wallLastT', String(lastT)); } catch {}
   const el = document.createElement('span');
   el.textContent = `${w.name || '賓客'}：${w.text}`;
   band.append(el);
-  const W = band.clientWidth, w0 = el.offsetWidth, gap = W * 0.15;
+  const W = band.clientWidth, w0 = el.offsetWidth, gap = Math.max(size * 6, W * 0.25);
   el.animate([{ transform: `translateX(${W}px)` }, { transform: `translateX(${-w0}px)` }],
              { duration: (W + w0) / speed * 1000, easing: 'linear', fill: 'both' }).onfinish = () => el.remove();
-  setTimeout(runWish, (w0 + gap) / speed * 1000);   // 前一則完全進場並留出間隔後，下一則才出發
+  // 用同一條動畫時間軸計時（不用 setTimeout）：畫面暫停繪製時兩者一起暫停，留言不會疊在一起。
+  band.animate([], { duration: (w0 + gap) / speed * 1000 }).onfinish = runWish;
 }
 
-// 新照片優先播，播完後隨機輪播全部。
-function next() {
-  setTimeout(next, showMs);
-  let p = queue.shift();
-  if (p && !all.some(a => a.id === p.id)) p = null;   // 排隊期間被隱藏了
-  p ??= all[Math.floor(Math.random() * all.length)];
-  if (!p || p.id === cur?.id) return;
-  // 先在背景載入，成功才換上去；剛上傳的檔案縮圖可能還沒好，失敗就排回隊伍稍後再試，畫面不會變黑。
-  const im = new Image();
-  im.onload = () => { cur = p; pic.classList.remove('on'); pic.src = im.src; };
-  im.onerror = () => { if ((p.tries = (p.tries || 0) + 1) < 5) queue.push(p); };
-  im.src = `https://drive.google.com/thumbnail?id=${p.id}&sz=w1920`;
-}
-pic.onload = () => {
-  pic.classList.add('on');
-  tip.textContent = cur.name ? `${cur.name}${cur.msg ? '：' + cur.msg : ''}` : HINT;
+// 瀏覽器不允許網頁自動播放有聲音的影片，所以要先按一下「開始」。
+$('go').onclick = () => {
+  started = true;
+  $('start').hidden = true;
+  document.documentElement.requestFullscreen?.().catch(() => {});   // 全螢幕也順便把含金鑰的網址列藏起來
+  vid.muted = false;
+  vid.play().catch(() => { $('info').textContent = '影片無法播放，請確認連結或改用本機影片檔。'; $('start').hidden = false; });
+};
+$('local').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  usingLocal = true;
+  vid.src = URL.createObjectURL(f);
+  $('info').textContent = `將播放本機檔案：${f.name}`;
 };
 
-poll().then(() => { next(); runWish(); });
-setInterval(poll, POLL_MS);
+if (!KEY) $('info').textContent = '連結無效，請用含金鑰的投影牆網址開啟。';
+else { poll().then(runWish); setInterval(poll, POLL_MS); }
 </script>
 </body>
 </html>
