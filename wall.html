@@ -18,18 +18,24 @@
   #tip { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 14px 24px 18px; text-align: center;
          font-family: "Iansui", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
          font-size: clamp(26px, 3.2vw, 56px); line-height: 1.35; background: rgba(0, 0, 0, .55); overflow-wrap: anywhere; }
+  /* 彈幕跑馬燈：自己佔一條，照片和下方的姓名祝福語會讓出這條的高度，互不遮蓋。 */
+  #band { position: fixed; left: 0; right: 0; overflow: hidden; background: #111; white-space: nowrap;
+          font-family: "Iansui", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  #band span { position: absolute; left: 0; top: 0; will-change: transform; }
 </style>
 </head>
 <body>
 <img id="pic" alt="賓客上傳的照片">
 <p id="tip"></p>
+<div id="band" aria-label="賓客彈幕留言" hidden></div>
 
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbzicHEvp0czROJiyvUeZVZ0p8xrg7SwuvP4Jf6OkD8X3dJXebPp9C_0glsNd3aKCdTz/exec';
 const POLL_MS = 20000, HINT = '打開 LINE 選單「照片上傳」，您的照片會出現在這裡';
-const pic = document.getElementById('pic'), tip = document.getElementById('tip');
+const pic = document.getElementById('pic'), tip = document.getElementById('tip'), band = document.getElementById('band');
 let all = [], queue = [], showMs = 6000, cur = null;
 const seen = new Set();
+let wishes = [], wishQueue = [], wishAt = 0, speed = 120;
 tip.textContent = HINT;
 
 async function poll() {
@@ -40,7 +46,38 @@ async function poll() {
     all = d.photos;   // 新到舊；後台標記隱藏的不會在裡面
     showMs = Math.max(2, Number(d.settings.wallSeconds) || 6) * 1000;
     for (const p of [...all].reverse()) if (!seen.has(p.id)) { seen.add(p.id); queue.push(p); }
+    wishes = d.wishes || [];
+    for (const w of wishes) if (!seen.has(w.id)) { seen.add(w.id); wishQueue.push(w); }
+    layout(d.settings);
   } catch {}   // 網路斷線就沿用舊清單，下次再試
+}
+
+// 依後台設定擺放跑馬燈（上或下、字體大小、速度）；沒有彈幕時整條收起來，不佔畫面。
+function layout(s) {
+  const size = Math.min(200, Math.max(16, Number(s.wishSize) || 40));
+  const h = wishes.length ? Math.round(size * 1.7) : 0;
+  const bottom = ['下', 'bottom'].includes(String(s.wishPosition).trim());
+  speed = Math.min(2000, Math.max(20, Number(s.wishSpeed) || 120));
+  band.hidden = !h;
+  band.style.cssText = `height:${h}px;font-size:${size}px;line-height:${h}px;${bottom ? 'bottom' : 'top'}:0`;
+  pic.style.top = bottom ? '0' : `${h}px`;
+  pic.style.height = `calc(100% - ${h}px)`;
+  tip.style.bottom = bottom ? `${h}px` : '0';
+}
+
+// 一則接一則由右往左跑：新留言優先，都跑過之後從頭輪播。
+function runWish() {
+  let w = wishQueue.shift();
+  if (w && !wishes.some(o => o.id === w.id)) w = null;   // 排隊期間被隱藏了
+  if (!w && wishes.length) w = wishes[wishAt++ % wishes.length];
+  if (!w) { setTimeout(runWish, 2000); return; }
+  const el = document.createElement('span');
+  el.textContent = `${w.name || '賓客'}：${w.text}`;
+  band.append(el);
+  const W = band.clientWidth, w0 = el.offsetWidth, gap = W * 0.15;
+  el.animate([{ transform: `translateX(${W}px)` }, { transform: `translateX(${-w0}px)` }],
+             { duration: (W + w0) / speed * 1000, easing: 'linear', fill: 'both' }).onfinish = () => el.remove();
+  setTimeout(runWish, (w0 + gap) / speed * 1000);   // 前一則完全進場並留出間隔後，下一則才出發
 }
 
 // 新照片優先播，播完後隨機輪播全部。
@@ -61,7 +98,7 @@ pic.onload = () => {
   tip.textContent = cur.name ? `${cur.name}${cur.msg ? '：' + cur.msg : ''}` : HINT;
 };
 
-poll().then(next);
+poll().then(() => { next(); runWish(); });
 setInterval(poll, POLL_MS);
 </script>
 </body>

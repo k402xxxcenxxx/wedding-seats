@@ -79,6 +79,13 @@
   <p id="fail"></p>
   <p class="note" id="rule"></p>
 
+  <h2>彈幕留言</h2>
+  <form id="wishForm" class="row">
+    <input id="dm" maxlength="50" required aria-label="彈幕留言" placeholder="不用傳照片，留一句話跑過大螢幕">
+    <button>送出</button>
+  </form>
+  <p class="note" id="dmMsg" role="status" aria-live="polite"></p>
+
   <h2>大家的照片</h2>
   <div id="grid"></div>
   <p class="note" id="empty" hidden>還沒有照片，來當第一個上傳的人吧！</p>
@@ -99,7 +106,7 @@ const KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const thumb = (id, w) => `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`;
-const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', quota: '已達每人可上傳的數量上限', size: '超過檔案大小上限', type: '只接受照片或影片' };
+const ERR = { key: '連結無效，請從 LINE 選單重新開啟', closed: '目前未開放上傳', quota: '已達每人的數量上限', empty: '請先輸入內容', size: '超過檔案大小上限', type: '只接受照片或影片' };
 
 // 每個裝置一組隨機 ID，同名的人靠 ID 前四碼區分；清除瀏覽器資料後會重新產生。
 let me = null, settings = {}, photos = [];
@@ -259,6 +266,24 @@ $('files').addEventListener('change', async e => {
   e.target.disabled = false;
   $('pick').classList.remove('busy');
   load();
+});
+
+$('wishForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = $('dm').value.trim();
+  if (!text) return;
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  $('dmMsg').textContent = '送出中…';
+  let r;
+  try { r = await post({ action: 'wish', userName: me.name, text }); } catch { r = {}; }
+  btn.disabled = false;
+  if (r.ok) {
+    $('dm').value = '';
+    $('dmMsg').textContent = settings.review ? '已送出，審核後會出現在大螢幕。' : '已送出，稍後會跑過大螢幕！';
+  } else {
+    $('dmMsg').textContent = ERR[r.error] || '送出失敗，請再試一次。';
+  }
 });
 
 $('nameForm').addEventListener('submit', e => {
